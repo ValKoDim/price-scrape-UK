@@ -97,23 +97,34 @@ SCRAPE_CONFIG = {
         "urls": ["https://hi-sky.co.uk/category/rooflights-flat-roofs/flat-roof-skylights"],
         "js": r"""() => {
             const clean = (s) => (s ?? "").toString().replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
-            const pickText = (root, selectors) => {
-                for (const sel of selectors) {
-                    const el = root.querySelector(sel);
-                    const t = clean(el?.textContent);
-                    if (t) return t;
-                }
-                return "";
-            };
+            
+            // Look for all product containers
             const cards = Array.from(document.querySelectorAll(".product.product-effect"));
+            
             return cards.map((card) => {
-                const name = pickText(card, [".product-title a", ".product-title", "h3.product-title a"]);
-                const priceText = pickText(card, [".product-price span", ".product-price"]);
-                const regularMaybe = clean(card.querySelector(".product-price del, .product-price s")?.textContent || "");
-                const regular_price = regularMaybe || priceText;
-                const sale_price = regularMaybe ? priceText : "";
-                return { name, regular_price, sale_price };
-            }).filter((r) => r.name || r.regular_price || r.sale_price);
+                // Name is inside h3.product-title a
+                const nameEl = card.querySelector(".product-title a");
+                const name = clean(nameEl?.textContent);
+
+                // Price logic based on your HTML snippet:
+                // Current price is usually the first span or a span without a class
+                // Old price is in .product-price__old
+                const priceContainer = card.querySelector(".product-price");
+                const oldPriceEl = priceContainer?.querySelector(".product-price__old");
+                
+                // If there is an old price, the 'current' price is the other span
+                const allSpans = Array.from(priceContainer?.querySelectorAll("span") || []);
+                const currentPriceEl = allSpans.find(s => !s.classList.contains("product-price__old"));
+
+                const oldPrice = clean(oldPriceEl?.textContent);
+                const currentPrice = clean(currentPriceEl?.textContent);
+
+                return { 
+                    name, 
+                    regular_price: oldPrice ? oldPrice : currentPrice, 
+                    sale_price: oldPrice ? currentPrice : "" 
+                };
+            }).filter((r) => r.name || r.regular_price);
         }"""
     },
     "Hi-Tech": {
