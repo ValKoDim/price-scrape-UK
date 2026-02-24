@@ -36,3 +36,10 @@ jobs:
           
           # Only commit if the file actually changed/exists
           git diff --quiet && git diff --staged --quiet || (git commit -m "Automated price update [skip ci]" && git push)
+          
+      - name: Upload Debug Screenshots
+        if: always() # This runs even if the script fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: debug_*.png

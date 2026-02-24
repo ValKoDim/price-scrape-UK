@@ -190,12 +190,35 @@ async def get_uk_proxy():
         print("Could not fetch a free proxy. Trying without one.")
         return None
 
-async def scrape_url(browser, url, js_script):
-    page = await browser.new_page()
+async def scrape_url(browser, url, js_script, domain_name):
+    # Set a more human-like User Agent
+    context = await browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    page = await context.new_page()
+    
     try:
-        # Some of these sites might be slow; we give it 60 seconds.
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        print(f"Requesting {url}...")
+        response = await page.goto(url, wait_until="networkidle", timeout=60000)
+        
+        # Check for HTTP errors (403, 404, etc)
+        if response.status != 200:
+            print(f"WARNING: {domain_name} returned status {response.status}")
+        
+        # Give extra time for JS to render the product grid
+        await asyncio.sleep(5) 
+        
         data = await page.evaluate(js_script)
+        
+        # If we got nothing, take a screenshot to see if we are blocked
+        if not data:
+            screenshot_path = f"debug_{domain_name.replace(' ', '_')}.png"
+            await page.screenshot(path=screenshot_path)
+            print(f"DEBUG: No data found for {domain_name}. Screenshot saved to {screenshot_path}")
+            # Optional: Print the first 500 chars of HTML to logs
+            content = await page.content()
+            print(f"HTML Snippet: {content[:500]}")
+
         return data
     except Exception as e:
         print(f"Error scraping {url}: {e}")
