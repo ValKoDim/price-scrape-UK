@@ -27,6 +27,9 @@ jobs:
 
       - name: Run Scraper
         run: python scraper.py
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
 
       - name: Commit and Push Excel File
         run: |

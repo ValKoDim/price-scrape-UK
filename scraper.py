@@ -3,6 +3,10 @@ import pandas as pd
 from datetime import datetime
 from playwright.async_api import async_playwright
 from fp.fp import FreeProxy # pip install free-proxy
+import requests
+import smtplib
+from email.message import EmailMessage
+import os
 
 SCRAPE_CONFIG = {
     "Lanterns Direct": {
@@ -156,12 +160,28 @@ async def get_uk_proxy():
 
 async def scrape_url(browser, url, js_script, domain_name):
     context = await browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-GB",
+            timezone_id="Europe/London",
+            extra_http_headers={
+                "Accept-Language": "en-GB,en;q=0.9"
+            }
     )
     page = await context.new_page()
     try:
         print(f"Requesting {url}...")
-        response = await page.goto(url, wait_until="networkidle", timeout=90000)
+        response = await page.goto(url, wait_until="domcontentloaded", timeout=90000)
+
+        try:
+            await page.get_by_role("button", name="Accept").click(timeout=5000)
+            print(f"Cookies accepted for {domain_name}")
+        except:
+            try:
+                await page.locator("button:has-text('Accept')").click(timeout=5000)
+                print(f"Cookies accepted for {domain_name}")
+            except:
+                pass
         
         if response and response.status != 200:
             print(f"WARNING: {domain_name} returned status {response.status}")
@@ -180,6 +200,74 @@ async def scrape_url(browser, url, js_script, domain_name):
     finally:
         await page.close()
 
+def scrape_hitech_api():
+    results = []
+
+    for page in range(1, 5):  # пробва страници 1 до 4
+        url = "https://hitechrooflights.co.uk/wp-json/wc/store/v1/products"
+
+        params = {
+            "per_page": 100,
+            "page": page,
+            "attributes[0][attribute]": "pa_blind",
+            "attributes[0][slug]": "without-blind"
+        }
+
+        response = requests.get(url, params=params, timeout=30)
+
+        if response.status_code == 400:
+            break
+
+        response.raise_for_status()
+
+        products = response.json()
+
+        if not products:
+            break
+
+        for p in products:
+            name = p.get("name", "")
+
+            prices = p.get("prices", {})
+            regular = prices.get("regular_price")
+            sale = prices.get("sale_price")
+            current = prices.get("price")
+
+            def format_price(value):
+                if not value:
+                    return ""
+                return f"£{int(value) / 100:.2f}"
+
+            results.append({
+                "name": name,
+                "regular_price": format_price(regular or current),
+                "sale_price": format_price(sale) if sale else ""
+            })
+
+    return results
+
+def send_email_with_attachment(file_path):
+    msg = EmailMessage()
+    msg["Subject"] = "Weekly Price Report"
+    msg["From"] = os.environ["EMAIL_USER"]
+    msg["To"] = "nikoleta@digitalmarketing.bg"
+
+    msg.set_content("Please find attached the weekly price report.")
+
+    with open(file_path, "rb") as f:
+        file_data = f.read()
+
+    msg.add_attachment(
+        file_data,
+        maintype="application",
+        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="Weekly_Prices.xlsx"
+    )
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
+        smtp.send_message(msg)
+
 async def main():
     proxy_url = await get_uk_proxy()
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -192,12 +280,20 @@ async def main():
         for domain, config in SCRAPE_CONFIG.items():
             print(f"\n--- Scraping {domain} ---")
             domain_results = []
-            for url in config["urls"]:
-                # FIX: Passing domain as 4th argument
-                items = await scrape_url(browser, url, config["js"], domain)
+
+            if domain == "Hi-Tech":
+                items = scrape_hitech_api()
                 for item in items:
-                    item["date_scraped"] = today_str # Tracking history
+                    item["date_scraped"] = today_str
                 domain_results.extend(items)
+
+            else:
+                for url in config["urls"]:
+                    items = await scrape_url(browser, url, config["js"], domain)
+                    for item in items:
+                        item["date_scraped"] = today_str
+                    domain_results.extend(items)
+
             excel_data[domain] = pd.DataFrame(domain_results)
 
         await browser.close()
@@ -206,6 +302,7 @@ async def main():
             for domain, df in excel_data.items():
                 df.to_excel(writer, sheet_name=domain[:31], index=False)
         print("\nScrape complete! File saved.")
+        send_email_with_attachment("Weekly_Prices.xlsx")
 
 if __name__ == "__main__":
     asyncio.run(main())
