@@ -147,7 +147,33 @@ SCRAPE_CONFIG = {
                 return { name, regular_price: compareAt || current, sale_price: compareAt ? current : "" };
             }).filter((r) => r.name || r.regular_price || r.sale_price);
         }"""
-    }
+    },
+    "Buy Glass and Steel": {
+        "urls": [
+            "https://buyglassandsteel.co.uk/product-category/skylights/flat-roof-skylights/",
+            "https://buyglassandsteel.co.uk/product-category/skylights/flat-roof-skylights/page/2/",
+            "https://buyglassandsteel.co.uk/product-category/skylights/flat-roof-skylights/page/3/"
+        ],
+        "js": r"""() => {
+            const clean = (s) => (s ?? "").toString().replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+            const pickText = (root, selectors) => {
+                for (const sel of selectors) {
+                    const el = root.querySelector(sel);
+                    const t = clean(el?.textContent);
+                    if (t) return t;
+                }
+                return "";
+            };
+            const cards = Array.from(document.querySelectorAll(".shop-container .products .product.type-product.product_cat-flat-roof-skylights"));
+            return cards.map((card) => {
+                const name = pickText(card, [".woocommerce-loop-product__title a", ".woocommerce-loop-product__title", ".name.product-title a"]);
+                const regular = pickText(card, [".price del .woocommerce-Price-amount", ".price del bdi", ".price del"]);
+                const sale = pickText(card, [".price ins .woocommerce-Price-amount", ".price ins bdi", ".price ins"]);
+                const current = pickText(card, [".price > .woocommerce-Price-amount", ".price bdi", ".price .woocommerce-Price-amount"]);
+                return { name, regular_price: regular || current || sale, sale_price: regular ? sale : "" };
+            }).filter((r) => r.name || r.regular_price || r.sale_price);
+        }"""
+    },
 }
 
 async def get_uk_proxy():
@@ -250,7 +276,7 @@ def send_email_with_attachment(file_path):
     msg = EmailMessage()
     msg["Subject"] = "Weekly Price Report"
     msg["From"] = os.environ["EMAIL_USER"]
-    msg["To"] = "nikoleta@digitalmarketing.bg"
+    msg["To"] = "n.nikolova@saris.bg"
 
     msg.set_content("Please find attached the weekly price report.")
 
